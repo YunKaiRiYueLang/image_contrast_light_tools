@@ -202,11 +202,14 @@ int main(int, char**)
     bool show_linear_adjust = false;
     bool show_gamma_adjust = false;
     bool show_histogram_equalization = false;
+    bool show_clahe = false;
     bool open_file_requested = false;
     bool image_dirty = false;
     float linear_alpha = 1.0f;
     float linear_beta = 0.0f;
     float gamma = 1.0f;
+    float clahe_clip_limit = 2.0f;
+    int clahe_tile_grid_size = 8;
     cv::Mat source_image;
     GLuint image_texture = 0;
     int image_width = 0;
@@ -249,6 +252,12 @@ int main(int, char**)
                     const cv::Mat equalized = HistogramEqualization(adjusted);
                     if (!equalized.empty())
                         adjusted = equalized;
+                }
+                if (show_clahe)
+                {
+                    const cv::Mat clahe_adjusted = ContrastLimitedAdaptiveHistogramEqualization(adjusted, clahe_clip_limit, clahe_tile_grid_size);
+                    if (!clahe_adjusted.empty())
+                        adjusted = clahe_adjusted;
                 }
                 GLuint texture = 0;
                 int width = 0;
@@ -301,6 +310,9 @@ int main(int, char**)
                     linear_beta = 0.0f;
                     gamma = 1.0f;
                     show_histogram_equalization = false;
+                    show_clahe = false;
+                    clahe_clip_limit = 2.0f;
+                    clahe_tile_grid_size = 8;
                     image_dirty = true;
                 }
                 ImGui::Separator();
@@ -309,6 +321,8 @@ int main(int, char**)
                     ImGui::MenuItem("Linear Brightness and Contrast Adjustment", nullptr, &show_linear_adjust);
                     ImGui::MenuItem("Gamma Adjustment", nullptr, &show_gamma_adjust);
                     if (ImGui::MenuItem("Histogram Equalization", nullptr, &show_histogram_equalization))
+                        image_dirty = true;
+                    if (ImGui::MenuItem("CLAHE", nullptr, &show_clahe))
                         image_dirty = true;
                     ImGui::EndMenu();
                 }
@@ -379,6 +393,21 @@ int main(int, char**)
             }
             ImGui::End();
             if (!show_histogram_equalization)
+                image_dirty = true;
+        }
+
+        // CLAHE window
+        if (show_clahe)
+        {
+            if (ImGui::Begin("CLAHE", &show_clahe, ImGuiWindowFlags_AlwaysAutoResize))
+            {
+                if (ImGui::SliderFloat("Clip Limit", &clahe_clip_limit, 0.1f, 10.0f, "%.2f"))
+                    image_dirty = true;
+                if (ImGui::SliderInt("Tile Grid Size", &clahe_tile_grid_size, 2, 32))
+                    image_dirty = true;
+            }
+            ImGui::End();
+            if (!show_clahe)
                 image_dirty = true;
         }
 

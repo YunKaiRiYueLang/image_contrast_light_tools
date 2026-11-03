@@ -105,3 +105,65 @@ cv::Mat HistogramEqualization(const cv::Mat& source)
 
     return result;
 }
+cv::Mat ContrastLimitedAdaptiveHistogramEqualization(const cv::Mat& source, double clip_limit, int tile_grid_size)
+{
+    if (source.empty() || clip_limit <= 0.0 || tile_grid_size < 1)
+        return cv::Mat();
+
+    cv::Mat image = source;
+    if (image.depth() == CV_16U)
+        image.convertTo(image, CV_8U, 1.0 / 256.0);
+    else if (image.depth() == CV_32F)
+        image.convertTo(image, CV_8U, 255.0);
+    else if (image.depth() != CV_8U)
+        image.convertTo(image, CV_8U);
+
+    const cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(clip_limit, cv::Size(tile_grid_size, tile_grid_size));
+
+    if (image.channels() == 1)
+    {
+        cv::Mat result;
+        clahe->apply(image, result);
+        return result;
+    }
+
+    if (image.channels() != 3 && image.channels() != 4)
+        return cv::Mat();
+
+    cv::Mat bgr;
+    cv::Mat alpha;
+    if (image.channels() == 4)
+    {
+        cv::cvtColor(image, bgr, cv::COLOR_BGRA2BGR);
+        std::vector<cv::Mat> bgra;
+        cv::split(image, bgra);
+        alpha = bgra[3];
+    }
+    else
+    {
+        bgr = image;
+    }
+
+    cv::Mat ycrcb;
+    cv::cvtColor(bgr, ycrcb, cv::COLOR_BGR2YCrCb);
+
+    std::vector<cv::Mat> channels;
+    cv::split(ycrcb, channels);
+    cv::Mat equalizedY;
+    clahe->apply(channels[0], equalizedY);
+    channels[0] = equalizedY;
+    cv::merge(channels, ycrcb);
+
+    cv::Mat result;
+    cv::cvtColor(ycrcb, result, cv::COLOR_YCrCb2BGR);
+
+    if (!alpha.empty())
+    {
+        std::vector<cv::Mat> bgrChannels;
+        cv::split(result, bgrChannels);
+        bgrChannels.push_back(alpha);
+        cv::merge(bgrChannels, result);
+    }
+
+    return result;
+}
