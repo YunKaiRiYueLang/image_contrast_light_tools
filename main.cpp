@@ -200,10 +200,12 @@ int main(int, char**)
 
     // Our state
     bool show_linear_adjust = false;
+    bool show_gamma_adjust = false;
     bool open_file_requested = false;
     bool image_dirty = false;
     float linear_alpha = 1.0f;
     float linear_beta = 0.0f;
+    float gamma = 1.0f;
     cv::Mat source_image;
     GLuint image_texture = 0;
     int image_width = 0;
@@ -239,7 +241,8 @@ int main(int, char**)
             image_dirty = false;
             if (!source_image.empty())
             {
-                const cv::Mat adjusted = LinearBrightnessContrast(source_image, linear_alpha, linear_beta);
+                const cv::Mat linear = LinearBrightnessContrast(source_image, linear_alpha, linear_beta);
+                const cv::Mat adjusted = (gamma == 1.0f) ? linear : GammaAdjustment(linear, gamma);
                 GLuint texture = 0;
                 int width = 0;
                 int height = 0;
@@ -288,6 +291,7 @@ int main(int, char**)
                 if (ImGui::BeginMenu("Brightness and Contrast Adjustment"))
                 {
                     ImGui::MenuItem("Linear Brightness and Contrast Adjustment", nullptr, &show_linear_adjust);
+                    ImGui::MenuItem("Gamma Adjustment", nullptr, &show_gamma_adjust);
                     ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
@@ -337,6 +341,16 @@ int main(int, char**)
             ImGui::End();
         }
 
+        // Gamma adjustment window
+        if (show_gamma_adjust)
+        {
+            if (ImGui::Begin("Gamma Adjustment", &show_gamma_adjust, ImGuiWindowFlags_AlwaysAutoResize))
+            {
+                if (ImGui::SliderFloat("Gamma", &gamma, 0.1f, 5.0f, "%.2f"))
+                    image_dirty = true;
+            }
+            ImGui::End();
+        }
 
         // Rendering
         ImGui::Render();
@@ -360,6 +374,7 @@ int main(int, char**)
                 {
                     linear_alpha = 1.0f;
                     linear_beta = 0.0f;
+                    gamma = 1.0f;
                     image_dirty = true;
                 }
                 else
