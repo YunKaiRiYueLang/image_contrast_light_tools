@@ -12,6 +12,7 @@
 #include "imgui_impl_opengl3.h"
 #include "file_dialog.h"
 #include "image_adjust.h"
+#include "image_io.h"
 #include <opencv2/opencv.hpp>
 #include <algorithm>
 #include <fstream>
@@ -205,6 +206,7 @@ int main(int, char**)
     bool show_clahe = false;
     bool show_contrast_stretching = false;
     bool open_file_requested = false;
+    bool save_file_requested = false;
     bool image_dirty = false;
     float linear_alpha = 1.0f;
     float linear_beta = 0.0f;
@@ -215,6 +217,7 @@ int main(int, char**)
     float stretch_high_percent = 99.0f;
 
     cv::Mat source_image;
+    cv::Mat displayed_image;
     GLuint image_texture = 0;
     int image_width = 0;
     int image_height = 0;
@@ -286,6 +289,7 @@ int main(int, char**)
                     image_texture = texture;
                     image_width = width;
                     image_height = height;
+                    displayed_image = adjusted;
                     image_error.clear();
                 }
                 else
@@ -321,6 +325,8 @@ int main(int, char**)
             }
             if (ImGui::BeginMenu("Tool"))
             {
+                if (ImGui::MenuItem("Save Current Image", nullptr, false, !displayed_image.empty()))
+                    save_file_requested = true;
                 if (ImGui::MenuItem("Reset Image"))
                 {
                     linear_alpha = 1.0f;
@@ -460,6 +466,18 @@ int main(int, char**)
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
+
+        // Save the currently displayed image (kept outside of the ImGui frame)
+        if (save_file_requested)
+        {
+            save_file_requested = false;
+            std::wstring target_path;
+            if (SaveImageFileDialog(target_path))
+            {
+                if (!SaveImageToFile(displayed_image, target_path))
+                    image_error = "Failed to save image";
+            }
+        }
 
         // Native file dialog (kept outside of the ImGui frame)
         if (open_file_requested)

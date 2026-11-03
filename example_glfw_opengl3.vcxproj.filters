@@ -19,6 +19,9 @@
     <ClCompile Include="image_adjust.cpp">
       <Filter>sources</Filter>
     </ClCompile>
+    <ClCompile Include="image_io.cpp">
+      <Filter>sources</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\imgui.cpp">
       <Filter>imgui</Filter>
     </ClCompile>
@@ -64,6 +67,9 @@
       <Filter>sources</Filter>
     </ClInclude>
     <ClInclude Include="image_adjust.h">
+      <Filter>sources</Filter>
+    </ClInclude>
+    <ClInclude Include="image_io.h">
       <Filter>sources</Filter>
     </ClInclude>
   </ItemGroup>

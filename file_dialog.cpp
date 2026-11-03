@@ -38,6 +38,26 @@ bool OpenImageFileDialog(std::wstring& out_path)
     return true;
 }
 
+bool SaveImageFileDialog(std::wstring& out_path)
+{
+    wchar_t file_name[2048] = L"image.png";
+    OPENFILENAMEW dialog = {};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = GetActiveWindow();
+    dialog.lpstrFilter = L"PNG Image\0*.png\0JPEG Image\0*.jpg;*.jpeg\0BMP Image\0*.bmp\0All Files\0*.*\0";
+    dialog.lpstrFile = file_name;
+    dialog.nMaxFile = static_cast<DWORD>(sizeof(file_name) / sizeof(file_name[0]));
+    dialog.lpstrTitle = L"Save Image";
+    dialog.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER;
+    dialog.lpstrDefExt = L"png";
+
+    if (!GetSaveFileNameW(&dialog))
+        return false;
+
+    out_path = file_name;
+    return true;
+}
+
 std::string WidePathToUtf8(const std::wstring& path)
 {
     return WideToUtf8(path.c_str());
