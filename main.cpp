@@ -201,6 +201,7 @@ int main(int, char**)
     // Our state
     bool show_linear_adjust = false;
     bool show_gamma_adjust = false;
+    bool show_histogram_equalization = false;
     bool open_file_requested = false;
     bool image_dirty = false;
     float linear_alpha = 1.0f;
@@ -242,7 +243,13 @@ int main(int, char**)
             if (!source_image.empty())
             {
                 const cv::Mat linear = LinearBrightnessContrast(source_image, linear_alpha, linear_beta);
-                const cv::Mat adjusted = (gamma == 1.0f) ? linear : GammaAdjustment(linear, gamma);
+                cv::Mat adjusted = (gamma == 1.0f) ? linear : GammaAdjustment(linear, gamma);
+                if (show_histogram_equalization)
+                {
+                    const cv::Mat equalized = HistogramEqualization(adjusted);
+                    if (!equalized.empty())
+                        adjusted = equalized;
+                }
                 GLuint texture = 0;
                 int width = 0;
                 int height = 0;
@@ -288,10 +295,21 @@ int main(int, char**)
             }
             if (ImGui::BeginMenu("Tool"))
             {
+                if (ImGui::MenuItem("Reset Image"))
+                {
+                    linear_alpha = 1.0f;
+                    linear_beta = 0.0f;
+                    gamma = 1.0f;
+                    show_histogram_equalization = false;
+                    image_dirty = true;
+                }
+                ImGui::Separator();
                 if (ImGui::BeginMenu("Brightness and Contrast Adjustment"))
                 {
                     ImGui::MenuItem("Linear Brightness and Contrast Adjustment", nullptr, &show_linear_adjust);
                     ImGui::MenuItem("Gamma Adjustment", nullptr, &show_gamma_adjust);
+                    if (ImGui::MenuItem("Histogram Equalization", nullptr, &show_histogram_equalization))
+                        image_dirty = true;
                     ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
@@ -350,6 +368,18 @@ int main(int, char**)
                     image_dirty = true;
             }
             ImGui::End();
+        }
+
+        // Histogram equalization window
+        if (show_histogram_equalization)
+        {
+            if (ImGui::Begin("Histogram Equalization", &show_histogram_equalization, ImGuiWindowFlags_AlwaysAutoResize))
+            {
+                ImGui::TextDisabled("Applies histogram equalization to the current image.");
+            }
+            ImGui::End();
+            if (!show_histogram_equalization)
+                image_dirty = true;
         }
 
         // Rendering
