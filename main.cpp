@@ -221,6 +221,13 @@ int main(int, char**)
     std::string image_error;
     const ImVec4 clear_color = ImVec4(0.10f, 0.10f, 0.10f, 1.00f);
 
+    // Load the default image from the executable directory when available
+    {
+        const std::wstring default_image_path = GetApplicationDirectory() + L"lena.png";
+        if (LoadImageFile(default_image_path, source_image))
+            image_dirty = true;
+    }
+
     // Main loop
 #ifdef __EMSCRIPTEN__
     // For an Emscripten build we are disabling file-system access, so let's not attempt to do a fopen() of the imgui.ini file.

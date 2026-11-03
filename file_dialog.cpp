@@ -42,3 +42,25 @@ std::string WidePathToUtf8(const std::wstring& path)
 {
     return WideToUtf8(path.c_str());
 }
+
+std::wstring GetApplicationDirectory()
+{
+    DWORD capacity = MAX_PATH;
+    std::wstring path(capacity, L'\0');
+    DWORD length = GetModuleFileNameW(nullptr, &path[0], capacity);
+    while (length >= capacity && capacity < 32768)
+    {
+        capacity *= 2;
+        path.resize(capacity);
+        length = GetModuleFileNameW(nullptr, &path[0], capacity);
+    }
+    if (length == 0 || length >= capacity)
+        return std::wstring();
+
+    path.resize(length);
+    const std::wstring::size_type slash = path.find_last_of(L"\\/");
+    if (slash == std::wstring::npos)
+        return std::wstring();
+
+    return path.substr(0, slash + 1);
+}
