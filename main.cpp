@@ -11,6 +11,7 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include "file_dialog.h"
+#include "image_adjust.h"
 #include <opencv2/opencv.hpp>
 #include <algorithm>
 #include <fstream>
@@ -68,7 +69,7 @@ static cv::Mat ConvertToRgba8(const cv::Mat& source)
     return rgba;
 }
 
-static bool LoadImageTexture(const std::wstring& path, GLuint* out_texture, int* out_width, int* out_height)
+static bool LoadImageFile(const std::wstring& path, cv::Mat& out_image)
 {
     std::ifstream file(path.c_str(), std::ios::binary | std::ios::ate);
     if (!file)
@@ -83,11 +84,17 @@ static bool LoadImageTexture(const std::wstring& path, GLuint* out_texture, int*
     if (!file.read(reinterpret_cast<char*>(encoded.data()), file_size))
         return false;
 
-    const cv::Mat decoded = cv::imdecode(encoded, cv::IMREAD_UNCHANGED);
+    cv::Mat decoded = cv::imdecode(encoded, cv::IMREAD_UNCHANGED);
     if (decoded.empty())
         return false;
 
-    const cv::Mat rgba = ConvertToRgba8(decoded);
+    out_image = decoded;
+    return true;
+}
+
+static bool CreateTextureFromImage(const cv::Mat& image, GLuint* out_texture, int* out_width, int* out_height)
+{
+    const cv::Mat rgba = ConvertToRgba8(image);
     if (rgba.empty())
         return false;
 
@@ -192,10 +199,12 @@ int main(int, char**)
     //IM_ASSERT(font != nullptr);
 
     // Our state
-    bool show_brightness_contrast = false;
+    bool show_linear_adjust = false;
     bool open_file_requested = false;
-    float brightness = 0.0f;
-    float contrast = 0.0f;
+    bool image_dirty = false;
+    float linear_alpha = 1.0f;
+    float linear_beta = 0.0f;
+    cv::Mat source_image;
     GLuint image_texture = 0;
     int image_width = 0;
     int image_height = 0;
@@ -224,6 +233,32 @@ int main(int, char**)
             continue;
         }
 
+        // Rebuild the texture when the adjustment parameters change
+        if (image_dirty)
+        {
+            image_dirty = false;
+            if (!source_image.empty())
+            {
+                const cv::Mat adjusted = LinearBrightnessContrast(source_image, linear_alpha, linear_beta);
+                GLuint texture = 0;
+                int width = 0;
+                int height = 0;
+                if (CreateTextureFromImage(adjusted, &texture, &width, &height))
+                {
+                    if (image_texture != 0)
+                        glDeleteTextures(1, &image_texture);
+                    image_texture = texture;
+                    image_width = width;
+                    image_height = height;
+                    image_error.clear();
+                }
+                else
+                {
+                    image_error = "Failed to create texture";
+                }
+            }
+        }
+
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -250,7 +285,11 @@ int main(int, char**)
             }
             if (ImGui::BeginMenu("Tool"))
             {
-                ImGui::MenuItem("Brightness and Contrast Adjustment", nullptr, &show_brightness_contrast);
+                if (ImGui::BeginMenu("Brightness and Contrast Adjustment"))
+                {
+                    ImGui::MenuItem("Linear Brightness and Contrast Adjustment", nullptr, &show_linear_adjust);
+                    ImGui::EndMenu();
+                }
                 ImGui::EndMenu();
             }
             ImGui::EndMenuBar();
@@ -284,24 +323,20 @@ int main(int, char**)
 
         ImGui::End();
 
-        // Brightness and contrast adjustment window
-        if (show_brightness_contrast)
+        // Linear brightness and contrast adjustment window
+        if (show_linear_adjust)
         {
-            if (ImGui::Begin("Brightness and Contrast Adjustment", &show_brightness_contrast, ImGuiWindowFlags_AlwaysAutoResize))
+            if (ImGui::Begin("Linear Brightness and Contrast Adjustment", &show_linear_adjust, ImGuiWindowFlags_AlwaysAutoResize))
             {
-                ImGui::SliderFloat("Brightness", &brightness, -100.0f, 100.0f, "%.0f");
-                ImGui::SliderFloat("Contrast", &contrast, -100.0f, 100.0f, "%.0f");
-                ImGui::Spacing();
-                if (ImGui::Button("Reset"))
-                {
-                    brightness = 0.0f;
-                    contrast = 0.0f;
-                }
-                ImGui::SameLine();
-                ImGui::Button("Apply");
+                if (ImGui::SliderFloat("Alpha", &linear_alpha, 0.0f, 3.0f, "%.3f"))
+                    image_dirty = true;
+                if (ImGui::SliderFloat("Beta", &linear_beta, -255.0f, 255.0f, "%.1f"))
+                    image_dirty = true;
+                //ImGui::TextDisabled("dst = src * alpha + beta");
             }
             ImGui::End();
         }
+
 
         // Rendering
         ImGui::Render();
@@ -321,17 +356,11 @@ int main(int, char**)
             std::wstring selected_path;
             if (OpenImageFileDialog(selected_path))
             {
-                GLuint texture = 0;
-                int width = 0;
-                int height = 0;
-                if (LoadImageTexture(selected_path, &texture, &width, &height))
+                if (LoadImageFile(selected_path, source_image))
                 {
-                    if (image_texture != 0)
-                        glDeleteTextures(1, &image_texture);
-                    image_texture = texture;
-                    image_width = width;
-                    image_height = height;
-                    image_error.clear();
+                    linear_alpha = 1.0f;
+                    linear_beta = 0.0f;
+                    image_dirty = true;
                 }
                 else
                 {
