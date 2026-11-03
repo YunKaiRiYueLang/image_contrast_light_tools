@@ -13,6 +13,9 @@
     <ClCompile Include="main.cpp">
       <Filter>sources</Filter>
     </ClCompile>
+    <ClCompile Include="file_dialog.cpp">
+      <Filter>sources</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\imgui.cpp">
       <Filter>imgui</Filter>
     </ClCompile>
@@ -52,6 +55,9 @@
       <Filter>sources</Filter>
     </ClInclude>
     <ClInclude Include="..\..\backends\imgui_impl_opengl3_loader.h">
+      <Filter>sources</Filter>
+    </ClInclude>
+    <ClInclude Include="file_dialog.h">
       <Filter>sources</Filter>
     </ClInclude>
   </ItemGroup>

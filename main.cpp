@@ -10,12 +10,22 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
+#include "file_dialog.h"
+#include <opencv2/opencv.hpp>
+#include <algorithm>
+#include <fstream>
 #include <stdio.h>
+#include <string>
+#include <vector>
 #define GL_SILENCE_DEPRECATION
 #if defined(IMGUI_IMPL_OPENGL_ES2)
 #include <GLES2/gl2.h>
 #endif
 #include <GLFW/glfw3.h> // Will drag system OpenGL headers
+
+#ifndef GL_CLAMP_TO_EDGE
+#define GL_CLAMP_TO_EDGE 0x812F
+#endif
 
 // [Win32] Our example includes a copy of glfw3.lib pre-compiled with VS2010 to maximize ease of testing and compatibility with old VS compilers.
 // To link with VS2010-era libraries, VS2015+ requires linking with legacy_stdio_definitions.lib, which we do using this pragma.
@@ -32,6 +42,70 @@
 static void glfw_error_callback(int error, const char* description)
 {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
+}
+
+static cv::Mat ConvertToRgba8(const cv::Mat& source)
+{
+    cv::Mat image = source;
+
+    if (image.depth() == CV_16U)
+        image.convertTo(image, CV_8U, 1.0 / 256.0);
+    else if (image.depth() == CV_32F)
+        image.convertTo(image, CV_8U, 255.0);
+    else if (image.depth() != CV_8U)
+        image.convertTo(image, CV_8U);
+
+    cv::Mat rgba;
+    if (image.channels() == 1)
+        cv::cvtColor(image, rgba, cv::COLOR_GRAY2RGBA);
+    else if (image.channels() == 3)
+        cv::cvtColor(image, rgba, cv::COLOR_BGR2RGBA);
+    else if (image.channels() == 4)
+        cv::cvtColor(image, rgba, cv::COLOR_BGRA2RGBA);
+    else
+        return cv::Mat();
+
+    return rgba;
+}
+
+static bool LoadImageTexture(const std::wstring& path, GLuint* out_texture, int* out_width, int* out_height)
+{
+    std::ifstream file(path.c_str(), std::ios::binary | std::ios::ate);
+    if (!file)
+        return false;
+
+    const std::streamsize file_size = file.tellg();
+    if (file_size <= 0)
+        return false;
+    file.seekg(0, std::ios::beg);
+
+    std::vector<unsigned char> encoded(static_cast<size_t>(file_size));
+    if (!file.read(reinterpret_cast<char*>(encoded.data()), file_size))
+        return false;
+
+    const cv::Mat decoded = cv::imdecode(encoded, cv::IMREAD_UNCHANGED);
+    if (decoded.empty())
+        return false;
+
+    const cv::Mat rgba = ConvertToRgba8(decoded);
+    if (rgba.empty())
+        return false;
+
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, rgba.cols, rgba.rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    *out_texture = texture;
+    *out_width = rgba.cols;
+    *out_height = rgba.rows;
+    return true;
 }
 
 // Main code
@@ -119,10 +193,13 @@ int main(int, char**)
 
     // Our state
     bool show_brightness_contrast = false;
-    bool show_open_dialog = false;
-    char open_path[260] = "";
+    bool open_file_requested = false;
     float brightness = 0.0f;
     float contrast = 0.0f;
+    GLuint image_texture = 0;
+    int image_width = 0;
+    int image_height = 0;
+    std::string image_error;
     const ImVec4 clear_color = ImVec4(0.10f, 0.10f, 0.10f, 1.00f);
 
     // Main loop
@@ -168,7 +245,7 @@ int main(int, char**)
             if (ImGui::BeginMenu("File"))
             {
                 if (ImGui::MenuItem("Open"))
-                    show_open_dialog = true;
+                    open_file_requested = true;
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Tool"))
@@ -179,12 +256,30 @@ int main(int, char**)
             ImGui::EndMenuBar();
         }
 
-        // Image preview area (placeholder)
+        // Image preview area
         ImVec2 preview_size = ImGui::GetContentRegionAvail();
         ImGui::BeginChild("PreviewArea", preview_size, ImGuiChildFlags_Borders);
-        ImVec2 text_size = ImGui::CalcTextSize("No image loaded");
-        ImGui::SetCursorPos(ImVec2((preview_size.x - text_size.x) * 0.5f, (preview_size.y - text_size.y) * 0.5f));
-        ImGui::TextDisabled("No image loaded");
+        {
+            ImVec2 avail = ImGui::GetContentRegionAvail();
+            ImVec2 cursor = ImGui::GetCursorPos();
+            if (image_texture != 0 && image_width > 0 && image_height > 0)
+            {
+                const float scale = std::min(avail.x / (float)image_width, avail.y / (float)image_height);
+                const ImVec2 image_size((float)image_width * scale, (float)image_height * scale);
+                ImGui::SetCursorPos(ImVec2(cursor.x + (avail.x - image_size.x) * 0.5f, cursor.y + (avail.y - image_size.y) * 0.5f));
+                ImGui::Image(static_cast<ImTextureID>(image_texture), image_size);
+            }
+            else
+            {
+                const char* message = image_error.empty() ? "No image loaded" : image_error.c_str();
+                const ImVec2 text_size = ImGui::CalcTextSize(message);
+                ImGui::SetCursorPos(ImVec2(cursor.x + (avail.x - text_size.x) * 0.5f, cursor.y + (avail.y - text_size.y) * 0.5f));
+                if (image_error.empty())
+                    ImGui::TextDisabled("%s", message);
+                else
+                    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", message);
+            }
+        }
         ImGui::EndChild();
 
         ImGui::End();
@@ -208,28 +303,6 @@ int main(int, char**)
             ImGui::End();
         }
 
-        // Open image dialog
-        if (show_open_dialog)
-        {
-            ImGui::OpenPopup("Open Image");
-            show_open_dialog = false;
-        }
-
-        ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-        if (ImGui::BeginPopupModal("Open Image", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-        {
-            ImGui::TextUnformatted("Image file path:");
-            ImGui::SetNextItemWidth(360.0f);
-            ImGui::InputTextWithHint("##image_path", "e.g. D:\\images\\sample.png", open_path, IM_ARRAYSIZE(open_path));
-            ImGui::Spacing();
-            if (ImGui::Button("Open", ImVec2(100.0f, 0.0f)))
-                ImGui::CloseCurrentPopup();
-            ImGui::SameLine();
-            if (ImGui::Button("Cancel", ImVec2(100.0f, 0.0f)))
-                ImGui::CloseCurrentPopup();
-            ImGui::EndPopup();
-        }
-
         // Rendering
         ImGui::Render();
         int display_w, display_h;
@@ -240,12 +313,41 @@ int main(int, char**)
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
+
+        // Native file dialog (kept outside of the ImGui frame)
+        if (open_file_requested)
+        {
+            open_file_requested = false;
+            std::wstring selected_path;
+            if (OpenImageFileDialog(selected_path))
+            {
+                GLuint texture = 0;
+                int width = 0;
+                int height = 0;
+                if (LoadImageTexture(selected_path, &texture, &width, &height))
+                {
+                    if (image_texture != 0)
+                        glDeleteTextures(1, &image_texture);
+                    image_texture = texture;
+                    image_width = width;
+                    image_height = height;
+                    image_error.clear();
+                }
+                else
+                {
+                    image_error = "Failed to load image";
+                }
+            }
+        }
     }
 #ifdef __EMSCRIPTEN__
     EMSCRIPTEN_MAINLOOP_END;
 #endif
 
     // Cleanup
+    if (image_texture != 0)
+        glDeleteTextures(1, &image_texture);
+
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
