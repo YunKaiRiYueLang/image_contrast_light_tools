@@ -1,0 +1,26 @@
+# Build output
+Debug/
+Release/
+x64/
+Win32/
+.vs/
+ipch/
+*.exe
+*.dll
+*.lib
+*.exp
+*.obj
+*.pdb
+*.ilk
+*.idb
+*.tlog
+*.log
+*.recipe
+*.FileListAbsolute.txt
+*.vcxproj.user
+
+# Runtime generated
+imgui.ini
+
+# IDE / tooling
+.codeartsdoer/
