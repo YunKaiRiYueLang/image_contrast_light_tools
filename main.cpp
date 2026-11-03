@@ -203,6 +203,7 @@ int main(int, char**)
     bool show_gamma_adjust = false;
     bool show_histogram_equalization = false;
     bool show_clahe = false;
+    bool show_contrast_stretching = false;
     bool open_file_requested = false;
     bool image_dirty = false;
     float linear_alpha = 1.0f;
@@ -210,6 +211,9 @@ int main(int, char**)
     float gamma = 1.0f;
     float clahe_clip_limit = 2.0f;
     int clahe_tile_grid_size = 8;
+    float stretch_low_percent = 1.0f;
+    float stretch_high_percent = 99.0f;
+
     cv::Mat source_image;
     GLuint image_texture = 0;
     int image_width = 0;
@@ -258,6 +262,12 @@ int main(int, char**)
                     const cv::Mat clahe_adjusted = ContrastLimitedAdaptiveHistogramEqualization(adjusted, clahe_clip_limit, clahe_tile_grid_size);
                     if (!clahe_adjusted.empty())
                         adjusted = clahe_adjusted;
+                }
+                if (show_contrast_stretching)
+                {
+                    const cv::Mat stretched = ContrastStretchPercentile(adjusted, stretch_low_percent, stretch_high_percent);
+                    if (!stretched.empty())
+                        adjusted = stretched;
                 }
                 GLuint texture = 0;
                 int width = 0;
@@ -313,6 +323,10 @@ int main(int, char**)
                     show_clahe = false;
                     clahe_clip_limit = 2.0f;
                     clahe_tile_grid_size = 8;
+                    show_contrast_stretching = false;
+                    stretch_low_percent = 1.0f;
+                    stretch_high_percent = 99.0f;
+
                     image_dirty = true;
                 }
                 ImGui::Separator();
@@ -323,6 +337,8 @@ int main(int, char**)
                     if (ImGui::MenuItem("Histogram Equalization", nullptr, &show_histogram_equalization))
                         image_dirty = true;
                     if (ImGui::MenuItem("CLAHE", nullptr, &show_clahe))
+                        image_dirty = true;
+                    if (ImGui::MenuItem("Contrast Stretching", nullptr, &show_contrast_stretching))
                         image_dirty = true;
                     ImGui::EndMenu();
                 }
@@ -364,9 +380,9 @@ int main(int, char**)
         {
             if (ImGui::Begin("Linear Brightness and Contrast Adjustment", &show_linear_adjust, ImGuiWindowFlags_AlwaysAutoResize))
             {
-                if (ImGui::SliderFloat("Alpha", &linear_alpha, 0.0f, 3.0f, "%.3f"))
+                if (ImGui::SliderFloat("Contrast", &linear_alpha, 0.0f, 3.0f, "%.3f"))
                     image_dirty = true;
-                if (ImGui::SliderFloat("Beta", &linear_beta, -255.0f, 255.0f, "%.1f"))
+                if (ImGui::SliderFloat("Brightness", &linear_beta, -255.0f, 255.0f, "%.1f"))
                     image_dirty = true;
                 //ImGui::TextDisabled("dst = src * alpha + beta");
             }
@@ -408,6 +424,22 @@ int main(int, char**)
             }
             ImGui::End();
             if (!show_clahe)
+                image_dirty = true;
+        }
+
+        // Contrast stretching window
+        if (show_contrast_stretching)
+        {
+            if (ImGui::Begin("Contrast Stretching", &show_contrast_stretching, ImGuiWindowFlags_AlwaysAutoResize))
+            {
+                if (ImGui::SliderFloat("Low Percentile", &stretch_low_percent, 0.0f, 10.0f, "%.1f%%"))
+                    image_dirty = true;
+                if (ImGui::SliderFloat("High Percentile", &stretch_high_percent, 90.0f, 100.0f, "%.1f%%"))
+                    image_dirty = true;
+                ImGui::TextDisabled("Percentile-clipped linear histogram stretching");
+            }
+            ImGui::End();
+            if (!show_contrast_stretching)
                 image_dirty = true;
         }
 
