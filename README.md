@@ -7,6 +7,7 @@
 - `File -> Open`：调用 Windows 原生对话框打开图像。
 - `Tool -> Save Current Image`：将当前显示效果编码写盘（默认 PNG）。
 - `Tool -> Reset Image`：重置全部调整参数。
+- `Tool -> algorithm_info`：调用 Lua 脚本 `scripts/algorithm_info.lua` 的 `get_algo_info()`，在只读文本框中显示算法说明。
 - `Tool -> Brightness and Contrast Adjustment`：
   - `Linear Brightness and Contrast Adjustment`
   - `Gamma Adjustment`
@@ -26,6 +27,7 @@ graph TD
         IMGUI["Dear ImGui<br/>imgui*.cpp + backends"]
         OCV["OpenCV 4.12<br/>core / imgproc / imgcodecs"]
         WIN["Win32 API<br/>commdlg.h (GetOpenFileNameW / GetSaveFileNameW)"]
+        LUA["Lua 5.4.7<br/>脚本运行时（base / table / string / math）"]
     end
 
     subgraph L3["③ 应用编排层（仅此一个翻译单元）"]
@@ -36,22 +38,30 @@ graph TD
         FD["file_dialog.h / .cpp<br/>OpenImageFileDialog<br/>SaveImageFileDialog<br/>GetApplicationDirectory<br/>WidePathToUtf8"]
         IA["image_adjust.h / .cpp<br/>LinearBrightnessContrast<br/>GammaAdjustment<br/>HistogramEqualization<br/>CLAHE<br/>ContrastStretchPercentile"]
         IO["image_io.h / .cpp<br/>SaveImageToFile<br/>ExtensionFromPath<br/>ConvertTo8Bit"]
+        LHOST["lua_host.h / .cpp<br/>InitializeLuaHost<br/>LoadAlgorithmInfoScript<br/>GetAlgorithmInfoFromLua<br/>ShutdownLuaHost"]
     end
 
     MAIN -->|"#include file_dialog.h"| FD
     MAIN -->|"#include image_adjust.h"| IA
     MAIN -->|"#include image_io.h"| IO
+    MAIN -->|"#include lua_host.h"| LHOST
     MAIN --> IMGUI
     MAIN --> GLFW
     MAIN --> OCV
     FD --> WIN
     IA --> OCV
     IO --> OCV
+    LHOST --> LUA
 
     FD -. "无依赖" .- IA
     IA -. "无依赖" .- IO
     FD -. "无依赖" .- IO
+    LHOST -. "无依赖" .- FD
+    LHOST -. "无依赖" .- IA
+    LHOST -. "无依赖" .- IO
 ```
+
+运行时脚本位于 `scripts/algorithm_info.lua`，由构建后事件复制到可执行文件目录的 `scripts/` 下。
 
 ## 编译单元依赖
 
@@ -64,13 +74,18 @@ graph LR
         fd_cpp["file_dialog.cpp"]
         ia_cpp["image_adjust.cpp"]
         io_cpp["image_io.cpp"]
+        lua_cpp["lua_host.cpp"]
         fd_h["file_dialog.h"]
         ia_h["image_adjust.h"]
         io_h["image_io.h"]
+        lua_h["lua_host.h"]
     end
     main_cpp --> fd_h
     main_cpp --> ia_h
     main_cpp --> io_h
+    main_cpp --> lua_h
+    lua_cpp --> lua_h
+    lua_cpp --> lua_hdr["lua.h / lauxlib.h / lualib.h"]
     main_cpp --> imgui_h["imgui.h"]
     main_cpp --> impl_h["imgui_impl_glfw.h / imgui_impl_opengl3.h"]
     main_cpp --> glfw_h["GLFW/glfw3.h"]
@@ -84,6 +99,7 @@ graph LR
     main_cpp -.-x fd_cpp
     main_cpp -.-x ia_cpp
     main_cpp -.-x io_cpp
+    main_cpp -.-x lua_cpp
 ```
 
 ## 运行时数据流
@@ -98,6 +114,7 @@ flowchart TD
     E --> F{"image_dirty?"}
     G["滑块 / 勾选项变化"] --> F
     H["启动：GetApplicationDirectory() + lena.png"] --> D
+    W["启动：GetApplicationDirectory() + scripts/algorithm_info.lua"] --> X["LoadAlgorithmInfoScript()<br/>lua_host"]
 
     F -->|是| I["LinearBrightnessContrast"]
     I --> J["GammaAdjustment"]
@@ -110,6 +127,9 @@ flowchart TD
 
     Q["Tool → Save Current Image"] --> R["SaveImageFileDialog()<br/>file_dialog"]
     R --> S["SaveImageToFile(displayed_image)<br/>image_io：ConvertTo8Bit → imencode → ofstream"]
+
+    T["Tool → algorithm_info"] --> U["GetAlgorithmInfoFromLua()<br/>lua_host：pcall get_algo_info"]
+    U --> V["只读文本框显示"]
 ```
 
 数据所有权：
@@ -129,10 +149,12 @@ flowchart TD
 | `file_dialog.h/.cpp` | 功能服务 | `OpenImageFileDialog`、`SaveImageFileDialog`、`GetApplicationDirectory`、`WidePathToUtf8` | Win32 原生对话框、宽字符路径转换、exe 目录定位 | `windows.h`、`commdlg.h` |
 | `image_adjust.h/.cpp` | 功能服务 | 5 个 `cv::Mat → cv::Mat` 纯函数 | 全部像素运算（convertTo / pow / equalizeHist / createCLAHE / calcHist+LUT） | OpenCV `core`/`imgproc` |
 | `image_io.h/.cpp` | 功能服务 | `SaveImageToFile` | 扩展名解析、位深归一、JPEG 去 alpha、imencode 写盘 | OpenCV `imgcodecs`/`imgproc`、`fstream` |
+| `lua_host.h/.cpp` | 功能服务 | `InitializeLuaHost`、`LoadAlgorithmInfoScript`、`GetAlgorithmInfoFromLua`、`ShutdownLuaHost`、`GetLuaErrorMessage` | Lua 状态生命周期、脚本读取与执行、错误收集；仅开放 base/table/string/math 库 | Lua 5.4.7、`fstream` |
+| `scripts/algorithm_info.lua` | 脚本资源 | `get_algo_info()` | 返回算法说明文本，修改后无需重新编译 exe | — |
 
 ## 构建
 
-项目提供 Visual Studio 工程 `example_glfw_opengl3.vcxproj`（MSVC v143，x64）以及 `Makefile` / `build_win32.bat`。
+项目提供 Visual Studio 工程 `example_glfw_opengl3.vcxproj`（MSVC v143，x64）以及 `Makefile` / `build_win32.bat`。Lua 5.4.7 源码直接位于 `third_party/lua-5.4.7/src` 并已加入工程，无需预编译静态库；构建后事件会把 `scripts/` 复制到输出目录。
 
 首次构建前需将工程属性中的 `OpenCV_DIR` 指向本机 OpenCV 4.12 的构建目录（当前为 `D:\opencv\4.12\opencv\build`），并确保 `opencv_world4120.dll` 与可执行文件同目录。
 
@@ -141,4 +163,5 @@ flowchart TD
 - Dear ImGui（仓库根目录）
 - GLFW（`examples/libs/glfw`）
 - OpenCV 4.12（`opencv_world4120`，x64/vc16）
+- Lua 5.4.7（`third_party/lua-5.4.7/src`，源码内置，MIT）
 - `comdlg32.lib`（原生打开 / 保存对话框）
