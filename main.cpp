@@ -207,6 +207,9 @@ int main(int, char**)
     bool show_clahe = false;
     bool show_contrast_stretching = false;
     bool show_algorithm_info = false;
+    bool show_dll_test = false;
+    bool run_dll_test = false;
+    std::string dll_test_text;
     bool open_file_requested = false;
     bool save_file_requested = false;
     bool image_dirty = false;
@@ -352,6 +355,12 @@ int main(int, char**)
                     LoadAlgorithmInfoScript(algorithm_info_script_path);
                     show_algorithm_info = true;
                 }
+                if (ImGui::MenuItem("test_dll_functions"))
+                {
+                    LoadAlgorithmInfoScript(algorithm_info_script_path);
+                    run_dll_test = true;
+                    show_dll_test = true;
+                }
                 ImGui::Separator();
                 if (ImGui::BeginMenu("Brightness and Contrast Adjustment"))
                 {
@@ -478,6 +487,32 @@ int main(int, char**)
                 if (algorithm_info_text.empty())
                     algorithm_info_text = "Failed to get algorithm information";
                 ImGui::InputTextMultiline("##algorithm_info_text", &algorithm_info_text[0], algorithm_info_text.size() + 1, ImVec2(-1.0f, -1.0f), ImGuiInputTextFlags_ReadOnly);
+            }
+            ImGui::End();
+        }
+
+        // DLL test window
+        if (show_dll_test)
+        {
+            ImGui::SetNextWindowSize(ImVec2(600.0f, 260.0f), ImGuiCond_FirstUseEver);
+            if (ImGui::Begin("dll_test", &show_dll_test))
+            {
+                if (run_dll_test)
+                {
+                    run_dll_test = false;
+                    if (!CallLuaStringFunction("test_dll_functions", dll_test_text) || dll_test_text.empty())
+                        dll_test_text = GetLuaErrorMessage();
+                    if (dll_test_text.empty())
+                        dll_test_text = "Failed to run DLL test";
+                }
+                if (ImGui::Button("run_test"))
+                {
+                    if (!CallLuaStringFunction("test_dll_functions", dll_test_text) || dll_test_text.empty())
+                        dll_test_text = GetLuaErrorMessage();
+                    if (dll_test_text.empty())
+                        dll_test_text = "Failed to run DLL test";
+                }
+                ImGui::InputTextMultiline("##dll_test_text", &dll_test_text[0], dll_test_text.size() + 1, ImVec2(-1.0f, -1.0f), ImGuiInputTextFlags_ReadOnly);
             }
             ImGui::End();
         }

@@ -28,6 +28,9 @@
     <ClCompile Include="lua_host.cpp">
       <Filter>sources</Filter>
     </ClCompile>
+    <ClCompile Include="lua_dll.cpp">
+      <Filter>sources</Filter>
+    </ClCompile>
     <ClCompile Include="third_party\lua-5.4.7\src\lapi.c">
       <Filter>lua</Filter>
     </ClCompile>
@@ -175,6 +178,9 @@
       <Filter>sources</Filter>
     </ClInclude>
     <ClInclude Include="lua_host.h">
+      <Filter>sources</Filter>
+    </ClInclude>
+    <ClInclude Include="lua_dll.h">
       <Filter>sources</Filter>
     </ClInclude>
     <ClInclude Include="third_party\lua-5.4.7\src\lua.h">

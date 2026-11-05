@@ -1,4 +1,5 @@
 #include "lua_host.h"
+#include "lua_dll.h"
 
 extern "C"
 {
@@ -58,6 +59,7 @@ bool InitializeLuaHost()
     luaL_requiref(g_lua_state, LUA_STRLIBNAME, luaopen_string, 1);
     luaL_requiref(g_lua_state, LUA_MATHLIBNAME, luaopen_math, 1);
     lua_pop(g_lua_state, 4);
+    RegisterLuaDllApi(g_lua_state);
     return true;
 }
 
@@ -93,9 +95,15 @@ bool LoadAlgorithmInfoScript(const std::wstring& script_path)
     return true;
 }
 
-bool GetAlgorithmInfoFromLua(std::string& out_text)
+bool CallLuaStringFunction(const char* function_name, std::string& out_text)
 {
     out_text.clear();
+
+    if (function_name == nullptr)
+    {
+        g_lua_error = "Lua function name is null";
+        return false;
+    }
 
     if (g_lua_state == nullptr)
     {
@@ -103,11 +111,11 @@ bool GetAlgorithmInfoFromLua(std::string& out_text)
         return false;
     }
 
-    lua_getglobal(g_lua_state, "get_algo_info");
+    lua_getglobal(g_lua_state, function_name);
     if (!lua_isfunction(g_lua_state, -1))
     {
         lua_pop(g_lua_state, 1);
-        g_lua_error = "get_algo_info is not defined";
+        g_lua_error = std::string(function_name) + " is not defined";
         return false;
     }
 
@@ -117,7 +125,7 @@ bool GetAlgorithmInfoFromLua(std::string& out_text)
     if (lua_type(g_lua_state, -1) != LUA_TSTRING)
     {
         lua_pop(g_lua_state, 1);
-        g_lua_error = "get_algo_info must return a string";
+        g_lua_error = std::string(function_name) + " must return a string";
         return false;
     }
 
@@ -128,6 +136,11 @@ bool GetAlgorithmInfoFromLua(std::string& out_text)
 
     g_lua_error.clear();
     return true;
+}
+
+bool GetAlgorithmInfoFromLua(std::string& out_text)
+{
+    return CallLuaStringFunction("get_algo_info", out_text);
 }
 
 std::string GetLuaErrorMessage()

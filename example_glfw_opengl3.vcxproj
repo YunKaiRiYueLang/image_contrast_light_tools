@@ -181,6 +181,7 @@ xcopy /Y /I /E "$(ProjectDir)scripts" "$(OutDir)scripts"</Command>
     <ClCompile Include="image_adjust.cpp" />
     <ClCompile Include="image_io.cpp" />
     <ClCompile Include="lua_host.cpp" />
+    <ClCompile Include="lua_dll.cpp" />
     <ClCompile Include="third_party\lua-5.4.7\src\lapi.c" />
     <ClCompile Include="third_party\lua-5.4.7\src\lauxlib.c" />
     <ClCompile Include="third_party\lua-5.4.7\src\lbaselib.c" />
@@ -225,6 +226,7 @@ xcopy /Y /I /E "$(ProjectDir)scripts" "$(OutDir)scripts"</Command>
     <ClInclude Include="image_adjust.h" />
     <ClInclude Include="image_io.h" />
     <ClInclude Include="lua_host.h" />
+    <ClInclude Include="lua_dll.h" />
     <ClInclude Include="third_party\lua-5.4.7\src\lua.h" />
     <ClInclude Include="third_party\lua-5.4.7\src\luaconf.h" />
     <ClInclude Include="third_party\lua-5.4.7\src\lualib.h" />

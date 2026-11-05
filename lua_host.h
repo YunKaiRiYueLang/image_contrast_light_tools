@@ -6,4 +6,5 @@ bool InitializeLuaHost();
 void ShutdownLuaHost();
 bool LoadAlgorithmInfoScript(const std::wstring& script_path);
 bool GetAlgorithmInfoFromLua(std::string& out_text);
+bool CallLuaStringFunction(const char* function_name, std::string& out_text);
 std::string GetLuaErrorMessage();
