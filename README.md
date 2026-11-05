@@ -5,6 +5,7 @@
 ## 功能
 
 - `File -> Open`：调用 Windows 原生对话框打开图像。
+- `Tool -> Compare Original and Current`：在预览区切换为对比视图，左侧为原图、右侧为当前调整结果，中间竖线可左右拖动。
 - `Tool -> Save Current Image`：将当前显示效果编码写盘（默认 PNG）。
 - `Tool -> Reset Image`：重置全部调整参数。
 - `Tool -> algorithm_info`：调用 Lua 脚本 `scripts/algorithm_info.lua` 的 `get_algo_info()`，在只读文本框中显示算法说明，并通过 `dll.load` / `dll.bind` 调用 `kernel32.dll`、`msvcrt.dll` 的简单函数显示实测结果。
