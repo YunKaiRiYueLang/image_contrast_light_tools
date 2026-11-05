@@ -7,7 +7,8 @@
 - `File -> Open`：调用 Windows 原生对话框打开图像。
 - `Tool -> Save Current Image`：将当前显示效果编码写盘（默认 PNG）。
 - `Tool -> Reset Image`：重置全部调整参数。
-- `Tool -> algorithm_info`：调用 Lua 脚本 `scripts/algorithm_info.lua` 的 `get_algo_info()`，在只读文本框中显示算法说明。
+- `Tool -> algorithm_info`：调用 Lua 脚本 `scripts/algorithm_info.lua` 的 `get_algo_info()`，在只读文本框中显示算法说明，并通过 `dll.load` / `dll.bind` 调用 `kernel32.dll`、`msvcrt.dll` 的简单函数显示实测结果。
+- `Tool -> test_dll_functions`：打开 `dll_test` 窗口，`run_test` 按钮调用 Lua 的 `test_dll_functions()`，每次点击重新执行 Windows DLL 调用并显示结果。
 - `Tool -> Brightness and Contrast Adjustment`：
   - `Linear Brightness and Contrast Adjustment`
   - `Gamma Adjustment`
@@ -26,7 +27,7 @@ graph TD
         GLFW["GLFW + OpenGL3<br/>窗口 / GL 上下文 / 纹理"]
         IMGUI["Dear ImGui<br/>imgui*.cpp + backends"]
         OCV["OpenCV 4.12<br/>core / imgproc / imgcodecs"]
-        WIN["Win32 API<br/>commdlg.h (GetOpenFileNameW / GetSaveFileNameW)"]
+        WIN["Win32 API<br/>commdlg.h 文件对话框<br/>kernel32 LoadLibraryW / GetProcAddress / FreeLibrary"]
         LUA["Lua 5.4.7<br/>脚本运行时（base / table / string / math）"]
     end
 
@@ -39,6 +40,7 @@ graph TD
         IA["image_adjust.h / .cpp<br/>LinearBrightnessContrast<br/>GammaAdjustment<br/>HistogramEqualization<br/>CLAHE<br/>ContrastStretchPercentile"]
         IO["image_io.h / .cpp<br/>SaveImageToFile<br/>ExtensionFromPath<br/>ConvertTo8Bit"]
         LHOST["lua_host.h / .cpp<br/>InitializeLuaHost<br/>LoadAlgorithmInfoScript<br/>GetAlgorithmInfoFromLua<br/>ShutdownLuaHost"]
+        LDLL["lua_dll.h / .cpp<br/>RegisterLuaDllApi<br/>dll.load / dll.bind / dll.close"]
     end
 
     MAIN -->|"#include file_dialog.h"| FD
@@ -52,6 +54,8 @@ graph TD
     IA --> OCV
     IO --> OCV
     LHOST --> LUA
+    LHOST --> LDLL
+    LDLL --> WIN
 
     FD -. "无依赖" .- IA
     IA -. "无依赖" .- IO
@@ -75,16 +79,21 @@ graph LR
         ia_cpp["image_adjust.cpp"]
         io_cpp["image_io.cpp"]
         lua_cpp["lua_host.cpp"]
+        lua_dll_cpp["lua_dll.cpp"]
         fd_h["file_dialog.h"]
         ia_h["image_adjust.h"]
         io_h["image_io.h"]
         lua_h["lua_host.h"]
+        lua_dll_h["lua_dll.h"]
     end
     main_cpp --> fd_h
     main_cpp --> ia_h
     main_cpp --> io_h
     main_cpp --> lua_h
     lua_cpp --> lua_h
+    lua_cpp --> lua_dll_h
+    lua_dll_cpp --> lua_dll_h
+    lua_dll_cpp --> win_dll_h["windows.h"]
     lua_cpp --> lua_hdr["lua.h / lauxlib.h / lualib.h"]
     main_cpp --> imgui_h["imgui.h"]
     main_cpp --> impl_h["imgui_impl_glfw.h / imgui_impl_opengl3.h"]
@@ -129,7 +138,12 @@ flowchart TD
     R --> S["SaveImageToFile(displayed_image)<br/>image_io：ConvertTo8Bit → imencode → ofstream"]
 
     T["Tool → algorithm_info"] --> U["GetAlgorithmInfoFromLua()<br/>lua_host：pcall get_algo_info"]
-    U --> V["只读文本框显示"]
+    T2["Tool → test_dll_functions"] --> U5["CallLuaStringFunction('test_dll_functions')"]
+    U5 --> U2
+    U --> U2["脚本执行 dll.load / dll.bind"]
+    U2 --> U3["Win32 LoadLibraryW + GetProcAddress"]
+    U3 --> U4["调用 GetTickCount / abs 等"]
+    U4 --> V["只读文本框显示"]
 ```
 
 数据所有权：
@@ -149,8 +163,24 @@ flowchart TD
 | `file_dialog.h/.cpp` | 功能服务 | `OpenImageFileDialog`、`SaveImageFileDialog`、`GetApplicationDirectory`、`WidePathToUtf8` | Win32 原生对话框、宽字符路径转换、exe 目录定位 | `windows.h`、`commdlg.h` |
 | `image_adjust.h/.cpp` | 功能服务 | 5 个 `cv::Mat → cv::Mat` 纯函数 | 全部像素运算（convertTo / pow / equalizeHist / createCLAHE / calcHist+LUT） | OpenCV `core`/`imgproc` |
 | `image_io.h/.cpp` | 功能服务 | `SaveImageToFile` | 扩展名解析、位深归一、JPEG 去 alpha、imencode 写盘 | OpenCV `imgcodecs`/`imgproc`、`fstream` |
-| `lua_host.h/.cpp` | 功能服务 | `InitializeLuaHost`、`LoadAlgorithmInfoScript`、`GetAlgorithmInfoFromLua`、`ShutdownLuaHost`、`GetLuaErrorMessage` | Lua 状态生命周期、脚本读取与执行、错误收集；仅开放 base/table/string/math 库 | Lua 5.4.7、`fstream` |
-| `scripts/algorithm_info.lua` | 脚本资源 | `get_algo_info()` | 返回算法说明文本，修改后无需重新编译 exe | — |
+| `lua_host.h/.cpp` | 功能服务 | `InitializeLuaHost`、`LoadAlgorithmInfoScript`、`GetAlgorithmInfoFromLua`、`CallLuaStringFunction`、`ShutdownLuaHost`、`GetLuaErrorMessage` | Lua 状态生命周期、脚本读取与执行、通用无参字符串函数调用、错误收集；仅开放 base/table/string/math 库；初始化时注册 `dll` API | Lua 5.4.7、`fstream`、`lua_dll` |
+| `lua_dll.h/.cpp` | 功能服务 | `RegisterLuaDllApi`；Lua 侧 `dll.load` / `dll.bind` / `dll.close` | 通用 DLL 加载与按签名分派调用；不包含任何具体 DLL 名、路径或符号 | `windows.h`、Lua 5.4.7 |
+| `scripts/algorithm_info.lua` | 脚本资源 | `get_algo_info()`、`test_dll_functions()` | 描述 DLL 路径、符号与签名，返回算法说明文本和 Windows DLL 实测结果；修改后无需重新编译 exe | — |
+
+## Lua DLL API
+
+C++ 侧只注册通用原语，具体 DLL 由脚本决定：
+
+```lua
+local kernel32 = dll.load("kernel32.dll")
+local get_tick_count = dll.bind(kernel32, "GetTickCount", { ret = "uint32", args = {} })
+local ticks = get_tick_count()
+```
+
+- `dll.load(path)`：成功返回句柄；失败返回 `nil, error`。
+- `dll.bind(handle, symbol, signature)`：`ret` 支持 `void`、`int32`、`uint32`、`int64`、`uint64`、`double`、`ptr`、`bool`；`args` 为类型数组，最多 4 个。
+- `dll.close(handle)`：主动卸载；未调用时由 `__gc` 释放。
+- 导出函数需使用 C 链接（`extern "C"`）；x64 下整数参数按 64 位传递。
 
 ## 构建
 
