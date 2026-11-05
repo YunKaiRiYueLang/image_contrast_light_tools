@@ -213,6 +213,9 @@ int main(int, char**)
     bool open_file_requested = false;
     bool save_file_requested = false;
     bool image_dirty = false;
+    bool original_dirty = false;
+    bool compare_original = false;
+    float compare_split = 0.5f;
     float linear_alpha = 1.0f;
     float linear_beta = 0.0f;
     float gamma = 1.0f;
@@ -224,8 +227,10 @@ int main(int, char**)
     cv::Mat source_image;
     cv::Mat displayed_image;
     GLuint image_texture = 0;
+    GLuint original_texture = 0;
     int image_width = 0;
     int image_height = 0;
+
     std::string image_error;
     const ImVec4 clear_color = ImVec4(0.10f, 0.10f, 0.10f, 1.00f);
 
@@ -236,7 +241,10 @@ int main(int, char**)
     {
         const std::wstring default_image_path = GetApplicationDirectory() + L"lena.png";
         if (LoadImageFile(default_image_path, source_image))
+        {
             image_dirty = true;
+            original_dirty = true;
+        }
     }
 
     // Main loop
@@ -259,6 +267,25 @@ int main(int, char**)
         {
             ImGui_ImplGlfw_Sleep(10);
             continue;
+        }
+
+        // Rebuild the original-image texture only when a new image is loaded
+        if (original_dirty)
+        {
+            original_dirty = false;
+            if (!source_image.empty())
+            {
+                GLuint texture = 0;
+                int width = 0;
+                int height = 0;
+                if (CreateTextureFromImage(source_image, &texture, &width, &height))
+                {
+                    if (original_texture != 0)
+                        glDeleteTextures(1, &original_texture);
+                    original_texture = texture;
+
+                }
+            }
         }
 
         // Rebuild the texture when the adjustment parameters change
@@ -333,6 +360,8 @@ int main(int, char**)
             }
             if (ImGui::BeginMenu("Tool"))
             {
+                if (ImGui::MenuItem("Compare Original and Current", nullptr, &compare_original, !source_image.empty()))
+                    compare_split = 0.5f;
                 if (ImGui::MenuItem("Save Current Image", nullptr, false, !displayed_image.empty()))
                     save_file_requested = true;
                 if (ImGui::MenuItem("Reset Image"))
@@ -383,20 +412,65 @@ int main(int, char**)
         ImVec2 preview_size = ImGui::GetContentRegionAvail();
         ImGui::BeginChild("PreviewArea", preview_size, ImGuiChildFlags_Borders);
         {
-            ImVec2 avail = ImGui::GetContentRegionAvail();
-            ImVec2 cursor = ImGui::GetCursorPos();
+            const ImVec2 avail = ImGui::GetContentRegionAvail();
+            const ImVec2 cursor = ImGui::GetCursorScreenPos();
             if (image_texture != 0 && image_width > 0 && image_height > 0)
             {
                 const float scale = std::min(avail.x / (float)image_width, avail.y / (float)image_height);
                 const ImVec2 image_size((float)image_width * scale, (float)image_height * scale);
-                ImGui::SetCursorPos(ImVec2(cursor.x + (avail.x - image_size.x) * 0.5f, cursor.y + (avail.y - image_size.y) * 0.5f));
-                ImGui::Image(static_cast<ImTextureID>(image_texture), image_size);
+                const ImVec2 image_pos(cursor.x + (avail.x - image_size.x) * 0.5f, cursor.y + (avail.y - image_size.y) * 0.5f);
+                ImGui::SetCursorScreenPos(image_pos);
+
+                if (compare_original && original_texture != 0)
+                {
+                    ImGui::InvisibleButton("##compare_area", image_size);
+                    if (ImGui::IsItemActive())
+                    {
+                        compare_split = (ImGui::GetIO().MousePos.x - image_pos.x) / image_size.x;
+                        if (compare_split < 0.0f)
+                            compare_split = 0.0f;
+                        if (compare_split > 1.0f)
+                            compare_split = 1.0f;
+                    }
+
+                    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+                    const ImVec2 image_end(image_pos.x + image_size.x, image_pos.y + image_size.y);
+                    const ImTextureID original_texture_id = static_cast<ImTextureID>(original_texture);
+                    const ImTextureID current_texture_id = static_cast<ImTextureID>(image_texture);
+                    const float divider_x = image_pos.x + image_size.x * compare_split;
+
+                    // Both images are drawn full-size at the same position; clipping keeps only one side visible.
+                    draw_list->PushClipRect(image_pos, ImVec2(divider_x, image_end.y), true);
+                    draw_list->AddImage(original_texture_id, image_pos, image_end);
+                    draw_list->PopClipRect();
+
+                    draw_list->PushClipRect(ImVec2(divider_x, image_pos.y), image_end, true);
+                    draw_list->AddImage(current_texture_id, image_pos, image_end);
+                    draw_list->PopClipRect();
+
+                    draw_list->AddLine(ImVec2(divider_x, image_pos.y), ImVec2(divider_x, image_end.y), IM_COL32(0, 0, 0, 180), 4.0f);
+                    draw_list->AddLine(ImVec2(divider_x, image_pos.y), ImVec2(divider_x, image_end.y), IM_COL32(255, 255, 255, 230), 2.0f);
+                    draw_list->AddCircleFilled(ImVec2(divider_x, image_pos.y + image_size.y * 0.5f), 6.0f, IM_COL32(0, 0, 0, 180), 16);
+                    draw_list->AddCircleFilled(ImVec2(divider_x, image_pos.y + image_size.y * 0.5f), 5.0f, IM_COL32(255, 255, 255, 230), 16);
+
+                    const ImU32 label_color = IM_COL32(255, 255, 255, 255);
+                    const ImU32 label_shadow = IM_COL32(0, 0, 0, 200);
+                    draw_list->AddText(ImVec2(image_pos.x + 10.0f, image_pos.y + 8.0f), label_shadow, "Original");
+                    draw_list->AddText(ImVec2(image_pos.x + 9.0f, image_pos.y + 7.0f), label_color, "Original");
+                    const ImVec2 current_label_size = ImGui::CalcTextSize("Current");
+                    draw_list->AddText(ImVec2(image_end.x - current_label_size.x - 10.0f, image_pos.y + 8.0f), label_shadow, "Current");
+                    draw_list->AddText(ImVec2(image_end.x - current_label_size.x - 11.0f, image_pos.y + 7.0f), label_color, "Current");
+                }
+                else
+                {
+                    ImGui::Image(static_cast<ImTextureID>(image_texture), image_size);
+                }
             }
             else
             {
                 const char* message = image_error.empty() ? "No image loaded" : image_error.c_str();
                 const ImVec2 text_size = ImGui::CalcTextSize(message);
-                ImGui::SetCursorPos(ImVec2(cursor.x + (avail.x - text_size.x) * 0.5f, cursor.y + (avail.y - text_size.y) * 0.5f));
+                ImGui::SetCursorScreenPos(ImVec2(cursor.x + (avail.x - text_size.x) * 0.5f, cursor.y + (avail.y - text_size.y) * 0.5f));
                 if (image_error.empty())
                     ImGui::TextDisabled("%s", message);
                 else
@@ -553,6 +627,8 @@ int main(int, char**)
                     linear_beta = 0.0f;
                     gamma = 1.0f;
                     image_dirty = true;
+                    original_dirty = true;
+                    compare_split = 0.5f;
                 }
                 else
                 {
@@ -568,6 +644,8 @@ int main(int, char**)
     // Cleanup
     if (image_texture != 0)
         glDeleteTextures(1, &image_texture);
+    if (original_texture != 0)
+        glDeleteTextures(1, &original_texture);
 
     ShutdownLuaHost();
 
