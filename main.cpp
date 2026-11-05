@@ -205,6 +205,7 @@ int main(int, char**)
     bool show_histogram_equalization = false;
     bool show_clahe = false;
     bool show_contrast_stretching = false;
+    bool show_algorithm_info = false;
     bool open_file_requested = false;
     bool save_file_requested = false;
     bool image_dirty = false;
@@ -342,6 +343,8 @@ int main(int, char**)
 
                     image_dirty = true;
                 }
+                if (ImGui::MenuItem("algorithm_info"))
+                    show_algorithm_info = true;
                 ImGui::Separator();
                 if (ImGui::BeginMenu("Brightness and Contrast Adjustment"))
                 {
@@ -454,6 +457,34 @@ int main(int, char**)
             ImGui::End();
             if (!show_contrast_stretching)
                 image_dirty = true;
+        }
+
+        // Algorithm info window
+        if (show_algorithm_info)
+        {
+            ImGui::SetNextWindowSize(ImVec2(600.0f, 320.0f), ImGuiCond_FirstUseEver);
+            if (ImGui::Begin("algorithm_info", &show_algorithm_info))
+            {
+                static char algorithm_info_text[2048] =
+                    "Available algorithms\n"
+                    "\n"
+                    "Linear Brightness and Contrast Adjustment\n"
+                    "  dst = src * Contrast + Brightness (cv::Mat::convertTo)\n"
+                    "\n"
+                    "Gamma Adjustment\n"
+                    "  dst = pow(src / max_value, Gamma) * max_value (cv::pow)\n"
+                    "\n"
+                    "Histogram Equalization\n"
+                    "  cv::equalizeHist on the Y channel for color images\n"
+                    "\n"
+                    "CLAHE\n"
+                    "  cv::createCLAHE(Clip Limit, Tile Grid Size) on the Y channel\n"
+                    "\n"
+                    "Contrast Stretching\n"
+                    "  Percentile-clipped min-max stretch to [0, 255] (cv::calcHist + cv::LUT)";
+                ImGui::InputTextMultiline("##algorithm_info_text", algorithm_info_text, IM_ARRAYSIZE(algorithm_info_text), ImVec2(-1.0f, -1.0f), ImGuiInputTextFlags_ReadOnly);
+            }
+            ImGui::End();
         }
 
         // Rendering
