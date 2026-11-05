@@ -13,6 +13,7 @@
 #include "file_dialog.h"
 #include "image_adjust.h"
 #include "image_io.h"
+#include "lua_host.h"
 #include <opencv2/opencv.hpp>
 #include <algorithm>
 #include <fstream>
@@ -225,6 +226,9 @@ int main(int, char**)
     std::string image_error;
     const ImVec4 clear_color = ImVec4(0.10f, 0.10f, 0.10f, 1.00f);
 
+    const std::wstring algorithm_info_script_path = GetApplicationDirectory() + L"scripts\\algorithm_info.lua";
+    LoadAlgorithmInfoScript(algorithm_info_script_path);
+
     // Load the default image from the executable directory when available
     {
         const std::wstring default_image_path = GetApplicationDirectory() + L"lena.png";
@@ -344,7 +348,10 @@ int main(int, char**)
                     image_dirty = true;
                 }
                 if (ImGui::MenuItem("algorithm_info"))
+                {
+                    LoadAlgorithmInfoScript(algorithm_info_script_path);
                     show_algorithm_info = true;
+                }
                 ImGui::Separator();
                 if (ImGui::BeginMenu("Brightness and Contrast Adjustment"))
                 {
@@ -465,24 +472,12 @@ int main(int, char**)
             ImGui::SetNextWindowSize(ImVec2(600.0f, 320.0f), ImGuiCond_FirstUseEver);
             if (ImGui::Begin("algorithm_info", &show_algorithm_info))
             {
-                static char algorithm_info_text[2048] =
-                    "Available algorithms\n"
-                    "\n"
-                    "Linear Brightness and Contrast Adjustment\n"
-                    "  dst = src * Contrast + Brightness (cv::Mat::convertTo)\n"
-                    "\n"
-                    "Gamma Adjustment\n"
-                    "  dst = pow(src / max_value, Gamma) * max_value (cv::pow)\n"
-                    "\n"
-                    "Histogram Equalization\n"
-                    "  cv::equalizeHist on the Y channel for color images\n"
-                    "\n"
-                    "CLAHE\n"
-                    "  cv::createCLAHE(Clip Limit, Tile Grid Size) on the Y channel\n"
-                    "\n"
-                    "Contrast Stretching\n"
-                    "  Percentile-clipped min-max stretch to [0, 255] (cv::calcHist + cv::LUT)";
-                ImGui::InputTextMultiline("##algorithm_info_text", algorithm_info_text, IM_ARRAYSIZE(algorithm_info_text), ImVec2(-1.0f, -1.0f), ImGuiInputTextFlags_ReadOnly);
+                std::string algorithm_info_text;
+                if (!GetAlgorithmInfoFromLua(algorithm_info_text) || algorithm_info_text.empty())
+                    algorithm_info_text = GetLuaErrorMessage();
+                if (algorithm_info_text.empty())
+                    algorithm_info_text = "Failed to get algorithm information";
+                ImGui::InputTextMultiline("##algorithm_info_text", &algorithm_info_text[0], algorithm_info_text.size() + 1, ImVec2(-1.0f, -1.0f), ImGuiInputTextFlags_ReadOnly);
             }
             ImGui::End();
         }
@@ -538,6 +533,8 @@ int main(int, char**)
     // Cleanup
     if (image_texture != 0)
         glDeleteTextures(1, &image_texture);
+
+    ShutdownLuaHost();
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
